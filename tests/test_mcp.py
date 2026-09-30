@@ -34,6 +34,7 @@ async def test_both_mcp_servers_initialize_and_share_profile(tmp_path, profile):
                         "import_job_snapshot",
                         "save_jobs",
                         "recommend_jobs",
+                        "get_reusable_context",
                     }
                     loaded = await session.call_tool("get_profile", {})
                     assert "test@example.com" in str(loaded)
@@ -47,10 +48,19 @@ async def test_both_mcp_servers_initialize_and_share_profile(tmp_path, profile):
                         "preview_from_snapshot",
                         "verify_from_snapshot",
                         "close_browser",
+                        "get_reusable_context",
                     }
                     result = await session.call_tool("inspect_application", {})
                     assert result.isError
                     assert "login" in str(result)
+                context = await session.call_tool("get_reusable_context", {})
+                assert not context.isError
+                view = json.loads(next(b.text for b in context.content if b.type == "text"))
+                assert view["private"] and not view["cache_hit"]
+                assert ("test@example.com" in view["context"]) == (command == "career-autofill-mcp")
+                again = await session.call_tool("get_reusable_context", {})
+                cached = json.loads(next(b.text for b in again.content if b.type == "text"))
+                assert not again.isError and cached["cache_hit"]
     assert (tmp_path / "data" / "profile.json").stat().st_mode & 0o777 == 0o600
 
 

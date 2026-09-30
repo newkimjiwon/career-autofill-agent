@@ -3,12 +3,20 @@
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
+from ..domain.context import ContextDocument, ContextSection
 from ..domain.models import CareerProfile, FillPlan, FormInspection, JobRole, SourceSnapshot
 
 
 class ProfileRepository(Protocol):
     def load_profile(self) -> CareerProfile: ...
     def save_profile(self, profile: CareerProfile) -> None: ...
+
+
+class ContextRepository(Protocol):
+    def load_context(self, section: ContextSection) -> ContextDocument | None: ...
+    def save_context(self, document: ContextDocument) -> str: ...
+    def context_path(self, section: ContextSection) -> str: ...
+    def initialize_notes(self, template: str) -> str: ...
 
 
 class MatchingRepository(ProfileRepository, Protocol):

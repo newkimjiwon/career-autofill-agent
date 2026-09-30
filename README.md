@@ -15,6 +15,9 @@ flowchart LR
     M --> R[프로젝트 근거와 기술 격차를 포함한 직무 추천]
     R --> U[사용자 직무 선택 및 직접 로그인]
     P --> A[career-autofill MCP]
+    P --> C[Git 제외: 용도별 로컬 Markdown]
+    C -. 재사용 .-> M
+    C -. 사실 검토 .-> A
     U --> A
     A --> F[입력 미리보기 → 입력 → 값 검증]
     F --> S[사용자 검토 및 직접 최종 제출]
@@ -28,15 +31,17 @@ MCP 호스트(예: Codex)가 Notion의 자유로운 문서 구조를 읽고 `Car
 
 ```mermaid
 flowchart LR
-    MCP[Inbound: 추천 MCP / 자동입력 MCP] --> UC[Application: MatchingService / AutofillService]
+    MCP[Inbound: 추천 MCP / 자동입력 MCP] --> UC[Application: MatchingService / AutofillService / ContextService]
     CLI[Inbound: CLI] --> UC
     UC --> D[Domain: 모델 / 추천 / 입력 계획 / 값 검증]
     UC --> P[Application이 정의한 Ports]
     JSON[Outbound: JsonCareerRepository] -. implements .-> P
+    MD[Outbound: PrivateMarkdownRepository] -. implements .-> P
     PW[Outbound: PlaywrightApplicationBrowser] -. implements .-> P
     SOURCE[Outbound: PlaywrightPublicSources] -. implements .-> P
     B[bootstrap: 구현체 선택과 주입] --> UC
     B --> JSON
+    B --> MD
     B --> PW
     B --> SOURCE
 ```
@@ -82,6 +87,7 @@ codex mcp add career_autofill \
 | `read_portfolio(url)` | 공개 Notion 페이지의 렌더링된 본문과 링크 읽기 |
 | `import_source_snapshot(document)` | 호스트 브라우저로 읽은 원문 저장 |
 | `save_profile(profile)` / `get_profile()` | 출처와 확인 상태를 포함한 표준 프로필 저장·조회 |
+| `get_reusable_context(section, refresh)` | 필요한 용도의 비공개 Markdown을 생성·재사용; 기본 `matching` |
 | 공고 수집 도구 | 구현된 채용 사이트 어댑터로 신입 공고 수집 및 직무표 파싱 |
 | `import_job_snapshot(document)` | 브라우저로 확인한 공고 직무표 파싱; rowspan/colspan 처리 |
 | `save_jobs(jobs)` | 호스트가 원문에서 정리한 직무 저장 |
@@ -105,6 +111,55 @@ uv run career-autofill recommend --limit 5
 
 예시 프로필을 가져오면 현재 로컬 프로필이 교체됩니다. 실제 개인 데이터가 있다면 별도의 `CAREER_DATA_DIR`에서 예시를 실행하세요.
 
+## 로컬 Markdown으로 정보 재사용
+
+Notion이나 다른 경력 자료를 **처음에 읽어 출처가 있는 JSON으로 정리하고**, 이후에는 필요한 Markdown만 읽습니다. 기존 자동입력도 JSON을 직접 사용하므로 원문을 매번 다시 해석할 필요가 없습니다. 원문이 바뀌면 다시 확인하고 `save_profile`, `update_profile` 또는 `import-profile`로 JSON을 갱신합니다.
+
+빈 수동 정리 양식을 만들고, 프로필 저장 후 용도별 문서를 생성합니다.
+
+```bash
+# 개인정보 없이 빈 로컬 양식 생성
+uv run career-autofill init-context
+
+# 원문에서 확인·정리한 표준 프로필 가져오기
+uv run career-autofill import-profile /path/to/profile.json
+
+# 프로젝트·기술·지원자격: 연락처와 기본 인적사항 제외
+uv run career-autofill context --section matching
+
+# 입력 검토용 정형 사실: 프로젝트 설명 제외
+uv run career-autofill context --section autofill
+```
+
+기본 저장 위치는 `data/context/`입니다.
+
+| 파일 | 용도 |
+| --- | --- |
+| `README.private.md` | 원문 위치·확인 시점·사용자 선호·미확인 사항을 수동으로 정리하는 양식 |
+| `matching.private.md` | 프로젝트, 기술과 지원자격을 확인하는 추천용 문서 |
+| `autofill.private.md` | 값·프로필 경로·출처·확인 상태를 확인하는 입력용 문서 |
+| `*.private.json` | 프로필 지문, 문서 생성 시각과 내용 검증용 해시 |
+
+프로필이 같으면 기존 Markdown을 재사용합니다. JSON 변경, 문서 손상·직접 수정 또는 `--refresh`가 있으면 다시 생성합니다. `--refresh`는 **로컬 문서만** 다시 만들며 Notion을 새로 읽지는 않습니다. 자동 생성 Markdown을 수정해도 JSON이나 지원서 입력값에 반영되지 않습니다. 수동 양식은 별도의 메모이며 MCP가 자동으로 사실로 가져오지 않습니다.
+
+두 MCP 모두 `get_reusable_context`를 제공합니다. 추천 서버의 기본 용도는 `matching`, 자동입력 서버는 `autofill`입니다. 응답의 `cache_hit`, `elapsed_ms`, `character_count`로 재사용 여부와 로컬 처리 시간을 확인할 수 있습니다. MCP 호스트에는 다음처럼 요청합니다.
+
+> 저장된 프로필이 있으면 get_reusable_context의 matching 문서부터 읽고 직무를 추천해줘. 원문을 변경했다고 알려주면 그때 다시 읽어 JSON을 갱신해줘. 현재 공고 마감과 지원 조건은 새로 확인해줘.
+
+가상 데이터로 캐시 동작만 테스트하려면 별도 임시 디렉터리를 사용합니다. 이 예시는 실제 사이트에 접속하지 않습니다.
+
+```bash
+CAREER_DEMO_DATA_DIR="$(mktemp -d)"
+CAREER_DATA_DIR="$CAREER_DEMO_DATA_DIR" uv run career-autofill import-profile examples/profile.example.json
+CAREER_DATA_DIR="$CAREER_DEMO_DATA_DIR" uv run career-autofill context --section matching
+CAREER_DATA_DIR="$CAREER_DEMO_DATA_DIR" uv run career-autofill context --section matching
+# 첫 조회: cache_hit=False / 같은 프로필의 다음 조회: cache_hit=True
+```
+
+`data/`, `*.private.md`, `*.private.json`은 Git에서 제외됩니다. 생성기는 Git 작업 트리 내부의 출력 경로가 이미 추적 중이거나 제외되지 않은 경우 읽기·쓰기를 거부합니다. 디렉터리는 0700, 파일은 0600 권한으로 생성합니다. `git add -f`는 제외 규칙을 우회하므로 개인 파일에는 사용하지 마세요. Markdown에는 비밀번호·인증번호·세션 쿠키를 넣지 않습니다.
+
+최적화 우선순위와 측정 범위는 [성능 문서](docs/performance.md)를 참고하세요.
+
 ## 2. 기본 자동입력 MCP
 
 | 도구 | 동작 |
@@ -112,6 +167,7 @@ uv run career-autofill recommend --limit 5
 | `open_application(job_url, mode)` | 선택한 공고 열기; `new`는 지원하기, `existing`은 지원서 수정 |
 | `inspect_application()` | 사용자 로그인 이후 실제 입력 필드 읽기 |
 | `update_profile(profile)` | 사용자가 확인한 누락 정보 반영 |
+| `get_reusable_context(section, refresh)` | 입력 검토에 필요한 비공개 정형 사실 재사용; 기본 `autofill` |
 | `preview_autofill(mappings)` | 필드·입력값·출처 및 미입력 사유를 포함한 계획 생성 |
 | `apply_autofill(plan_id)` | 같은 브라우저에서 계획 실행 후 값을 다시 읽어 검증 |
 | `preview_from_snapshot(url, fields, mappings)` | 호스트 브라우저의 로그인 세션에서 읽은 필드로 입력 계획 생성 |
@@ -142,6 +198,7 @@ uv run career-autofill recommend --limit 5
 실제 브라우저 테스트에서 자동입력 속도가 다소 느렸습니다. 전체 폼 재조회 횟수는 줄였지만, 화면 해석과 브라우저 도구 호출, 커스텀 위젯의 응답 대기, 입력 결과 검증에서 발생하는 지연을 더 줄여야 합니다. 각 구간의 소요 시간은 아직 분리해 측정하지 않았으므로 병목을 먼저 확인해야 합니다.
 
 - **모델 선택 최적화:** 화면 해석을 담당하는 MCP 호스트에서 Jev 모델을 사용하는 등의 방안을 검토합니다. 같은 입력에서 응답 시간과 필드 매핑 정확도를 비교해 적용 여부를 결정합니다. 현재 도입하거나 성능 개선 효과를 검증한 상태는 아닙니다.
+- **원문 재해석 줄이기:** 용도별 로컬 Markdown을 재사용합니다. 프로필 변경은 지문으로 감지하며, 원문 변경 여부는 따로 확인해야 합니다.
 - **브라우저 호출 최소화:** 호스트 브라우저에서도 페이지 단위 입력을 묶어 실행하고, 화면 변경이 없는 구간의 중복 조회와 도구 호출을 줄입니다.
 - **사이트별 위젯 처리:** 반복되는 학교·전공 검색과 드롭다운 처리를 어댑터에 추가해 매번 화면을 해석하는 작업을 줄입니다.
 - **구간별 성능 측정:** 모델 응답, 폼 조회, 입력, 위젯 대기, 검증 시간을 각각 기록해 최적화 전후를 비교합니다. 기존 값 보존과 입력 정확도도 함께 확인합니다.
@@ -160,4 +217,4 @@ uv run pytest -q
 
 검증에는 MCP 두 서버의 실제 stdio 연결, 출처가 있는 프로필 공유, 병합 셀 공고 파싱, 한국 시간 마감 처리, 미확인 값·기존 값 보존, 새 지원/기존 지원서 수정 팝업의 로그인 인계, 입력 이벤트와 값 검증, 연월 포맷, 변경된 입력 계획 거부, 호스트 브라우저의 입력 및 기존 값 재검증이 포함됩니다. 브라우저 자동입력 테스트는 모든 네트워크 요청을 가로채 가상의 폼으로 응답하므로 실제 지원서를 만들거나 제출하지 않습니다.
 
-헥사고날 계층 의존성과 조회 횟수 회귀 테스트를 포함한 자동 검증 31개를 제공합니다. 실제 지원자의 프로필·지원 내역·캡처는 저장소에 포함하지 않습니다.
+헥사고날 계층 의존성과 조회 횟수 회귀 테스트를 포함한 자동 검증 37개를 제공합니다. 실제 지원자의 프로필·지원 내역·캡처는 저장소에 포함하지 않습니다.

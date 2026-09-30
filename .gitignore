@@ -11,3 +11,6 @@ data/
 .browser/
 artifacts/
 .DS_Store
+# Private career notes stay local, including copies outside data/.
+*.private.md
+*.private.json

@@ -9,8 +9,10 @@ from .adapters.inbound.match_mcp import create_server as create_match_server
 from .adapters.outbound.form_dom import SCAN_SCRIPT
 from .adapters.outbound.json_repository import JsonCareerRepository
 from .adapters.outbound.playwright_browser import PlaywrightApplicationBrowser
+from .adapters.outbound.private_markdown import PrivateMarkdownRepository
 from .adapters.outbound.public_sources import PlaywrightPublicSources
 from .application.autofill import AutofillService
+from .application.context import ContextService
 from .application.matching import MatchingService
 
 
@@ -29,13 +31,19 @@ def build_autofill_service() -> AutofillService:
     return AutofillService(repository, browser)
 
 
+def build_context_service() -> ContextService:
+    repository = JsonCareerRepository(Path(os.environ.get("CAREER_DATA_DIR", "data")))
+    documents = PrivateMarkdownRepository(repository.store.root / "context")
+    return ContextService(repository, documents)
+
+
 def match_main() -> None:
-    create_match_server(build_matching_service()).run(transport="stdio")
+    create_match_server(build_matching_service(), build_context_service()).run(transport="stdio")
 
 
 def autofill_main() -> None:
-    create_autofill_server(build_autofill_service()).run(transport="stdio")
+    create_autofill_server(build_autofill_service(), build_context_service()).run(transport="stdio")
 
 
 def cli_main() -> None:
-    run_cli(build_matching_service(), SCAN_SCRIPT)
+    run_cli(build_matching_service(), SCAN_SCRIPT, build_context_service())

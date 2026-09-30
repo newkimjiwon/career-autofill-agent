@@ -2,11 +2,17 @@ import argparse
 import json
 from pathlib import Path
 
+from ...application.context import ContextService
 from ...application.matching import MatchingService
 from ...domain.models import CareerProfile, JobRole, SourceSnapshot
 
 
-def run(service: MatchingService, scanner_script: str, argv: list[str] | None = None) -> None:
+def run(
+    service: MatchingService,
+    scanner_script: str,
+    contexts: ContextService,
+    argv: list[str] | None = None,
+) -> None:
     parser = argparse.ArgumentParser(description="Career MCP local data and recommendation tools")
     commands = parser.add_subparsers(dest="command", required=True)
     for name in ("import-profile", "import-jobs", "import-job-snapshot"):
@@ -16,11 +22,28 @@ def run(service: MatchingService, scanner_script: str, argv: list[str] | None = 
     report.add_argument("--limit", type=int, default=5)
     commands.add_parser("schema")
     commands.add_parser("form-scanner", help="Print read-only JavaScript for host form snapshots")
+    commands.add_parser("init-context", help="Create a private, empty local career guide")
+    context = commands.add_parser("context", help="Generate or reuse private Markdown from JSON")
+    context.add_argument("--section", choices=("matching", "autofill"), default="matching")
+    context.add_argument("--refresh", action="store_true", help="Rebuild Markdown, not source data")
+    context.add_argument("--print", dest="print_context", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "schema":
         print(json.dumps(CareerProfile.model_json_schema(), ensure_ascii=False, indent=2))
     elif args.command == "form-scanner":
         print(scanner_script)
+    elif args.command == "init-context":
+        print(contexts.initialize_notes()["path"])
+    elif args.command == "context":
+        try:
+            result = contexts.get_reusable_context(args.section, args.refresh)
+        except ValueError as error:
+            parser.error(str(error))
+        if args.print_context:
+            print(result["context"], end="")
+        else:
+            print(result["path"])
+            print(f"cache_hit={result['cache_hit']} elapsed_ms={result['elapsed_ms']}")
     elif args.command == "import-profile":
         profile = CareerProfile.model_validate_json(args.file.read_text())
         service.save_profile(profile)
