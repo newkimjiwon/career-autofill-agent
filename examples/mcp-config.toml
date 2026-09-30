@@ -1,0 +1,17 @@
+# Paste into your MCP host configuration; replace paths with your own absolute paths.
+# This file is an example, not an automatic change to the host's permissions or settings.
+[mcp_servers.career_match]
+command = "uv"
+args = ["--directory", "/absolute/path/career-autofill-agent", "run", "career-match-mcp"]
+
+[mcp_servers.career_match.env]
+CAREER_DATA_DIR = "/absolute/path/career-autofill-agent/data"
+
+[mcp_servers.career_autofill]
+command = "uv"
+args = ["--directory", "/absolute/path/career-autofill-agent", "run", "career-autofill-mcp"]
+
+[mcp_servers.career_autofill.env]
+CAREER_DATA_DIR = "/absolute/path/career-autofill-agent/data"
+CAREER_BROWSER_DIR = "/absolute/path/career-autofill-agent/.browser"
+CAREER_HEADLESS = "false"

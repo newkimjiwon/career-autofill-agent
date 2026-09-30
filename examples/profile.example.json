@@ -1,0 +1,21 @@
+{
+  "basic": {
+    "name_ko": {"value": "홍길동", "source": "user:confirmed", "status": "user"},
+    "email": {"value": "candidate@example.com", "source": "user:confirmed", "status": "user"},
+    "phone": {"value": "010-0000-0000", "source": "user:confirmed", "status": "user"},
+    "portfolio_url": {"value": "https://example.notion.site/portfolio", "source": "user:provided"}
+  },
+  "education": [{
+    "school": {"value": "예시대학교", "source": "user:confirmed", "status": "user"},
+    "major": {"value": "컴퓨터공학", "source": "user:confirmed", "status": "user"},
+    "status": {"value": "졸업", "source": "user:confirmed", "status": "user"}
+  }],
+  "experiences": [{
+    "title": "AI 문서 검색 서비스",
+    "summary": "ChatGPT API와 FastAPI를 활용한 문서 질의 서비스 개발 및 Docker 배포",
+    "skills": ["Python", "FastAPI", "ChatGPT", "Docker"],
+    "source": "https://example.notion.site/project"
+  }],
+  "skills": ["Python", "FastAPI", "Docker"],
+  "issues": ["병역과 자격증 취득일 등은 사용자 확인이 필요합니다."]
+}
